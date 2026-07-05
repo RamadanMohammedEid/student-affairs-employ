@@ -86,6 +86,14 @@ tbody tr:hover td{background:rgba(0,180,216,.03);}
 /* ── ACTION ICONS ── */
 .acts{display:flex;gap:5px;align-items:center;}
 .ico-btn{width:30px;height:30px;border-radius:7px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .2s;flex-shrink:0;}
+.row-thumb{width:42px;height:42px;border-radius:8px;object-fit:cover;cursor:zoom-in;border:1px solid #e2e8f0;transition:transform .15s;display:block;margin:0 auto;}
+.row-thumb:hover{transform:scale(1.15);box-shadow:0 4px 14px rgba(0,0,0,.18);}
+.row-thumb-pdf{width:42px;height:42px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;display:flex;align-items:center;justify-content:center;font-size:17px;margin:0 auto;text-decoration:none;}
+.row-thumb-none{color:var(--muted);font-size:.75rem;display:block;text-align:center;}
+.lightbox-ov{display:none;position:fixed;inset:0;background:rgba(10,20,30,.82);z-index:9999;align-items:center;justify-content:center;padding:24px;cursor:zoom-out;}
+.lightbox-ov.open{display:flex;}
+.lightbox-ov img{max-width:min(90vw,900px);max-height:88vh;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.4);}
+.lightbox-close{position:absolute;top:20px;left:24px;width:40px;height:40px;border-radius:50%;border:none;background:#fff;font-size:18px;cursor:pointer;}
 .ico-btn:hover{transform:scale(1.12);}
 .ib-v{background:rgba(0,180,216,.1);color:#0096b4;}
 .ib-v:hover{background:rgba(0,180,216,.2);}
@@ -786,6 +794,7 @@ tbody tr:hover td{background:rgba(0,180,216,.03);}
             <th>الرقم القومي</th>
             <th>نوع الشهادة</th>
             <th>الإيصال</th>
+            <th>معاينة</th>
             <th>نسخ</th>
             <th>تاريخ التقديم</th>
             <th>الطباعة</th>
@@ -795,7 +804,7 @@ tbody tr:hover td{background:rgba(0,180,216,.03);}
           </tr>
         </thead>
         <tbody id="tbody">
-          <tr><td colspan="12" class="empty-cell">
+          <tr><td colspan="13" class="empty-cell">
             <span class="empty-ico">⏳</span>جاري التحميل...
           </td></tr>
         </tbody>
@@ -940,7 +949,7 @@ function sClass(s){
 
 function driveView(url){
   const m = url.match(/\/d\/([^/]+)/);
-  return m ? 'https://drive.google.com/uc?export=view&id='+m[1] : url;
+  return m ? 'https://drive.google.com/thumbnail?id='+m[1]+'&sz=w1000' : url;
 }
 
 // ══════════════════════════════════════════
@@ -1031,6 +1040,28 @@ function toggleSort(){
 // ══════════════════════════════════════════
 //  RENDER
 // ══════════════════════════════════════════
+function renderRowThumb(url){
+  if (!url || !url.trim()) return '<span class="row-thumb-none">لا توجد</span>';
+  const isImg = /\.(jpg|jpeg|png|gif|webp)/i.test(url);
+  if (isImg) {
+    const src = driveView(url);
+    return `<img src="${src}" class="row-thumb" alt="إيصال"
+              onclick="openLightbox('${src}')"
+              onerror="this.outerHTML='<a href=\\'${url}\\' target=\\'_blank\\' class=\\'row-thumb-pdf\\' title=\\'تعذّر تحميل المعاينة — فتح الملف\\'>🔗</a>'">`;
+  }
+  return `<a href="${url}" target="_blank" class="row-thumb-pdf" title="ملف PDF">📄</a>`;
+}
+
+function openLightbox(src){
+  const ov = document.getElementById('lightboxOv');
+  document.getElementById('lightboxImg').src = src;
+  ov.classList.add('open');
+}
+function closeLightbox(){
+  document.getElementById('lightboxOv').classList.remove('open');
+  document.getElementById('lightboxImg').src = '';
+}
+
 function renderTable(){
   const tbody = document.getElementById('tbody');
   const total = FILTERED.length;
@@ -1052,6 +1083,7 @@ function renderTable(){
       <td style="font-family:monospace;font-size:.76rem;direction:ltr;">${r.nationalId||'—'}</td>
       <td style="font-size:.8rem;">${r.requestType||'—'}</td>
       <td style="font-size:.79rem;">${r.receiptNo||'—'}</td>
+      <td>${renderRowThumb(r.receiptUrl)}</td>
       <td style="text-align:center;">${r.count||'—'}</td>
       <td style="font-size:.76rem;white-space:nowrap;">${r.submittedAt||'—'}</td>
       <td style="font-size:.72rem;color:var(--muted);">${r.printedAt   ? '🖨️ '+r.printedAt   : '—'}</td>
@@ -1072,7 +1104,7 @@ function renderTable(){
 
 function renderEmpty(msg){
   document.getElementById('tbody').innerHTML =
-    `<tr><td colspan="12" class="empty-cell"><span class="empty-ico">📭</span>${msg}</td></tr>`;
+    `<tr><td colspan="13" class="empty-cell"><span class="empty-ico">📭</span>${msg}</td></tr>`;
   document.getElementById('pag').innerHTML='';
 }
 
@@ -1437,5 +1469,11 @@ function buildPrintArea(r, G){
 // ══════════════════════════════════════════
 loadAll();
 </script>
+<!-- ═══════ LIGHTBOX: معاينة سريعة للصورة ═══════ -->
+<div class="lightbox-ov" id="lightboxOv" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="event.stopPropagation();closeLightbox()">✕</button>
+  <img id="lightboxImg" src="" alt="معاينة" onclick="event.stopPropagation()">
+</div>
+
 </body>
 </html>
