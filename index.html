@@ -1159,6 +1159,7 @@ function openDetail(idx){
     <div class="di"><div class="di-lbl">اسم الطالب</div><div class="di-val">${r.nameAr||'—'}</div></div>
     <div class="di"><div class="di-lbl">الاسم بالإنجليزية</div><div class="di-val" id="diNameEn" style="direction:ltr;text-align:right;">جارِ التحميل...</div></div>
     <div class="di"><div class="di-lbl">الرقم القومي</div><div class="di-val" style="direction:ltr;font-family:monospace;">${r.nationalId||'—'}</div></div>
+    <div class="di"><div class="di-lbl">تاريخ الميلاد</div><div class="di-val">${formatDobFromNationalId(r.nationalId)||'—'}</div></div>
     <div class="di"><div class="di-lbl">نوع الشهادة</div><div class="di-val">${r.requestType||'—'}</div></div>
     <div class="di"><div class="di-lbl">رقم الإيصال</div><div class="di-val">${r.receiptNo||'—'}</div></div>
     <div class="di"><div class="di-lbl">عدد النسخ</div><div class="di-val">${r.count||'—'}</div></div>
@@ -1308,6 +1309,30 @@ async function doPrint(){
   }, 400);
 }
 
+// ── استخراج تاريخ الميلاد من الرقم القومي المصري ──
+// الرقم القومي 14 رقم: رقم1=القرن (2=19xx / 3=20xx), رقمين سنة, رقمين شهر, رقمين يوم
+function dobFromNationalId(nid) {
+  if (!nid) return null;
+  const s = String(nid).trim();
+  if (!/^\d{14}$/.test(s)) return null;
+
+  const centuryDigit = s[0];
+  const century = centuryDigit === '2' ? 1900 : centuryDigit === '3' ? 2000 : null;
+  if (!century) return null;
+
+  const yy = parseInt(s.substr(1,2), 10);
+  const mm = parseInt(s.substr(3,2), 10);
+  const dd = parseInt(s.substr(5,2), 10);
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+
+  return { day: dd, month: mm, year: century + yy };
+}
+
+function formatDobFromNationalId(nid) {
+  const d = dobFromNationalId(nid);
+  return d ? (d.day + '-' + d.month + '-' + d.year) : '';
+}
+
 function formatDob(raw) {
   if (!raw) return '';
   // لو Date object من Apps Script
@@ -1366,7 +1391,7 @@ function formatAttempt(raw) {
 function buildPrintArea(r, G){
   const name   = G?.name_ar     || '..........................................';
   const natId  = G?.national_id || r.nationalId || '......................';
-  const dob    = formatDob(G?.dob);
+  const dob    = formatDobFromNationalId(natId) || formatDob(G?.dob);
   const addr   = G?.address     || '......................';
   const dept   = G?.department  || '......................';
   const grade  = G?.grade       || '......................';
