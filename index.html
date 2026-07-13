@@ -1042,14 +1042,13 @@ function toggleSort(){
 // ══════════════════════════════════════════
 function renderRowThumb(url){
   if (!url || !url.trim()) return '<span class="row-thumb-none">لا توجد</span>';
-  const isImg = /\.(jpg|jpeg|png|gif|webp)/i.test(url);
-  if (isImg) {
-    const src = driveView(url);
-    return `<img src="${src}" class="row-thumb" alt="إيصال"
-              onclick="openLightbox('${src}')"
-              onerror="this.outerHTML='<a href=\\'${url}\\' target=\\'_blank\\' class=\\'row-thumb-pdf\\' title=\\'تعذّر تحميل المعاينة — فتح الملف\\'>🔗</a>'">`;
-  }
-  return `<a href="${url}" target="_blank" class="row-thumb-pdf" title="ملف PDF">📄</a>`;
+  // ملاحظة: روابط Google Drive (file.getUrl()) مالهاش امتداد صورة في آخر الرابط،
+  // فمينفعش نعتمد على فحص الامتداد لتحديد هل الملف صورة أو لأ.
+  // بنحاول نعرضها كصورة دايمًا، ولو فشل التحميل (PDF فعلاً أو رابط باظ) بنرجع لأيقونة/رابط.
+  const src = driveView(url);
+  return `<img src="${src}" class="row-thumb" alt="إيصال"
+            onclick="openLightbox('${src}')"
+            onerror="this.outerHTML='<a href=\\'${url}\\' target=\\'_blank\\' class=\\'row-thumb-pdf\\' title=\\'تعذّر تحميل المعاينة — فتح الملف\\'>🔗</a>'">`;
 }
 
 function openLightbox(src){
@@ -1170,11 +1169,9 @@ function openDetail(idx){
   const rBox=document.getElementById('rcptBox');
   const rActs=document.getElementById('rcptActs');
   if(r.receiptUrl && r.receiptUrl.trim()){
-    const isImg=/\.(jpg|jpeg|png|gif|webp)/i.test(r.receiptUrl);
-    rBox.innerHTML = isImg
-      ? `<img src="${driveView(r.receiptUrl)}" alt="إيصال"
-             onerror="this.parentElement.innerHTML='<div class=no-img>تعذّر التحميل — افتح الرابط مباشرة</div>'">`
-      : `<div class="no-img">📄 ملف PDF — استخدم رابط الفتح أدناه</div>`;
+    // روابط Drive مالهاش امتداد صورة، فبنعرض كصورة دايمًا ونسيب onerror يتصرف لو مش صورة فعلاً
+    rBox.innerHTML = `<img src="${driveView(r.receiptUrl)}" alt="إيصال"
+             onerror="this.parentElement.innerHTML='<div class=no-img>تعذّر عرض الصورة — استخدم رابط الفتح أدناه</div>'">`;
     document.getElementById('rcptOpen').href = r.receiptUrl;
     document.getElementById('rcptDl').href   = r.receiptUrl;
     rActs.style.display='flex';
@@ -1188,11 +1185,8 @@ function openDetail(idx){
     tSec.style.display='block';
     const tBox=document.getElementById('transBox');
     const tActs=document.getElementById('transActs');
-    const isImg2=/\.(jpg|jpeg|png|gif|webp)/i.test(r.receiptUrlTranslated);
-    tBox.innerHTML = isImg2
-      ? `<img src="${driveView(r.receiptUrlTranslated)}" alt="ترجمة"
-             onerror="this.parentElement.innerHTML='<div class=no-img>تعذّر التحميل</div>'">`
-      : `<div class="no-img">📄 ملف PDF</div>`;
+    tBox.innerHTML = `<img src="${driveView(r.receiptUrlTranslated)}" alt="ترجمة"
+             onerror="this.parentElement.innerHTML='<div class=no-img>تعذّر عرض الصورة — استخدم رابط الفتح أدناه</div>'">`;
     document.getElementById('transOpen').href = r.receiptUrlTranslated;
     document.getElementById('transDl').href   = r.receiptUrlTranslated;
     tActs.style.display='flex';
