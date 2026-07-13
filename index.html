@@ -1157,6 +1157,7 @@ function openDetail(idx){
 
   document.getElementById('detailGrid').innerHTML = `
     <div class="di"><div class="di-lbl">اسم الطالب</div><div class="di-val">${r.nameAr||'—'}</div></div>
+    <div class="di"><div class="di-lbl">الاسم بالإنجليزية</div><div class="di-val" id="diNameEn" style="direction:ltr;text-align:right;">جارِ التحميل...</div></div>
     <div class="di"><div class="di-lbl">الرقم القومي</div><div class="di-val" style="direction:ltr;font-family:monospace;">${r.nationalId||'—'}</div></div>
     <div class="di"><div class="di-lbl">نوع الشهادة</div><div class="di-val">${r.requestType||'—'}</div></div>
     <div class="di"><div class="di-lbl">رقم الإيصال</div><div class="di-val">${r.receiptNo||'—'}</div></div>
@@ -1197,6 +1198,36 @@ function openDetail(idx){
   document.getElementById('editStatus').value = r.status||'قيد الانتظار';
   document.getElementById('editNotes').value  = r.notes ||'';
   document.getElementById('detailOv').classList.add('open');
+
+  loadNameEn(r.nationalId);
+}
+
+// ══════════════════════════════════════════
+//  الاسم بالإنجليزية (من شيت الطلاب عبر getStudent)
+// ══════════════════════════════════════════
+const NAME_EN_CACHE = {};
+async function loadNameEn(nationalId){
+  const el = document.getElementById('diNameEn');
+  if (!nationalId){ el.textContent='—'; return; }
+
+  if (NAME_EN_CACHE[nationalId] !== undefined){
+    el.textContent = NAME_EN_CACHE[nationalId] || '—';
+    return;
+  }
+
+  try{
+    const res = await api('getStudent', { nationalId });
+    const nameEn = (res.found && res.data && res.data.name_en) ? res.data.name_en : '';
+    NAME_EN_CACHE[nationalId] = nameEn;
+    // لو المستخدم فتح تفاصيل طلب تاني قبل ما الرد يوصل، منحدّتش عنصر غلط
+    if (CUR && CUR.nationalId === nationalId){
+      el.textContent = nameEn || '—';
+    }
+  }catch(e){
+    if (CUR && CUR.nationalId === nationalId){
+      el.textContent = '—';
+    }
+  }
 }
 
 // ══════════════════════════════════════════
