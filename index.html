@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>لوحة إدارة شئون الخريجين</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://drive.google.com">
+<link rel="dns-prefetch" href="https://script.google.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap" rel="stylesheet">
 <style>
 /* ══════════════════════ VARIABLES ══════════════════════ */
@@ -662,9 +667,12 @@ tbody tr:hover td{background:rgba(0,180,216,.03);}
       btn.disabled = true;
       document.getElementById('lpBtnTxt').textContent = 'جاري التحقق...';
       document.getElementById('lpBtnArrow').innerHTML = '<span style="display:inline-block;width:16px;height:16px;border:2.5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:lp-spin .7s linear infinite;"></span>';
-      const style = document.createElement('style');
-      style.textContent = '@keyframes lp-spin{to{transform:rotate(360deg)}}';
-      document.head.appendChild(style);
+      if(!document.getElementById('lpSpinKf')){
+        const style = document.createElement('style');
+        style.id = 'lpSpinKf';
+        style.textContent = '@keyframes lp-spin{to{transform:rotate(360deg)}}';
+        document.head.appendChild(style);
+      }
       err.classList.remove('show');
 
       let result;
@@ -780,7 +788,7 @@ tbody tr:hover td{background:rgba(0,180,216,.03);}
     <div class="srch">
       <span>🔍</span>
       <input type="text" id="srchQ" placeholder="ابحث بالاسم أو الرقم القومي أو رقم الطلب..."
-             oninput="applyFilters()">
+             oninput="onSearchInput()">
     </div>
     <select class="flt" id="fltType" onchange="applyFilters()">
       <option value="">كل أنواع الطلبات</option>
@@ -873,6 +881,47 @@ tbody tr:hover td{background:rgba(0,180,216,.03);}
         </div>
       </div>
 
+      <!-- بيانات الشهادة القابلة للتعديل (مهم للطلبة الوافدين) -->
+      <div style="margin-top:16px;padding-top:14px;border-top:2px solid var(--sur);">
+        <div style="font-size:.78rem;font-weight:700;color:var(--txt);margin-bottom:9px;">🌍 بيانات الشهادة المطبوعة <span style="font-weight:400;color:var(--muted);">(للطلبة الوافدين — تُستخدم وقت الطباعة)</span></div>
+
+        <div class="dg" style="margin-bottom:10px;">
+          <div class="fg" style="margin-bottom:0;">
+            <label>نوع رقم الهوية</label>
+            <select id="certIdType" onchange="onCertIdTypeChange()">
+              <option value="national">🪪 الرقم القومي</option>
+              <option value="passport">📘 رقم الجواز</option>
+            </select>
+          </div>
+          <div class="fg" style="margin-bottom:0;">
+            <label id="certIdValueLbl">الرقم القومي</label>
+            <input type="text" id="certIdValue" oninput="saveCertOv()" placeholder="أدخل الرقم" style="direction:ltr;text-align:right;">
+          </div>
+        </div>
+
+        <div class="dg" style="margin-bottom:10px;">
+          <div class="fg" style="margin-bottom:0;">
+            <label>النوع (السيد/السيدة)</label>
+            <select id="certGender" onchange="saveCertOv()">
+              <option value="">⚙️ تلقائي (حسب بيانات الطالب)</option>
+              <option value="male">👨 ذكر — السيد / حصل</option>
+              <option value="female">👩 أنثى — السيدة / حصلت</option>
+            </select>
+          </div>
+          <div class="fg" style="margin-bottom:0;">
+            <label>الجنسية</label>
+            <input type="text" id="certNationality" oninput="saveCertOv()" placeholder="مصري / مصرية (افتراضي حسب النوع)">
+          </div>
+        </div>
+
+        <div class="dg" style="margin-bottom:0;">
+          <div class="fg" style="margin-bottom:0;">
+            <label>محل الإقامة</label>
+            <input type="text" id="certAddress" oninput="saveCertOv()" placeholder="أدخل محل الإقامة">
+          </div>
+        </div>
+      </div>
+
       <!-- تعديل الحالة -->
       <div class="fg" style="margin-top:16px;">
         <label>📌 تعديل الحالة</label>
@@ -916,6 +965,15 @@ let PAGE     = 1;
 const PG     = 15;
 let SORT_ASC = false;
 let CUR      = null;
+const CACHE_KEY = 'cachedRequests_v1';
+
+// حماية من الأكواد الغريبة في البيانات (أسماء فيها < أو & مثلاً) — جودة وأمان
+function esc(v){
+  if(v===null||v===undefined) return '';
+  return String(v).replace(/[&<>"']/g, c=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
 
 // ══════════════════════════════════════════
 //  UTILS
@@ -988,24 +1046,48 @@ function driveView(url){
 // ══════════════════════════════════════════
 //  LOAD
 // ══════════════════════════════════════════
+// تجهيز كل سجل مرة واحدة فقط: فهرسه (بدل indexOf المكلفة) وتاريخه كرقم (بدل تحليله في كل مقارنة فرز)
+function primeRecords(list){
+  for(let i=0;i<list.length;i++){
+    list[i]._idx = i;
+    list[i]._ts  = parseArabicDate(list[i].submittedAt);
+  }
+  return list;
+}
+
 async function loadAll(){
-  lov('جاري تحميل الطلبات...');
+  // ١) عرض فوري من آخر نسخة محفوظة محليًا (Stale-While-Revalidate) لسرعة إدراك فائقة
+  let hydratedFromCache = false;
+  try{
+    const cached = sessionStorage.getItem(CACHE_KEY);
+    if (cached){
+      ALL = primeRecords(JSON.parse(cached));
+      updateStats();
+      applyFilters();
+      hydratedFromCache = true;
+    }
+  }catch(e){ /* تجاهل أي خطأ كاش وكمّل تحميل طبيعي */ }
+
+  if (!hydratedFromCache) lov('جاري تحميل الطلبات...');
+
   try{
     const resp = await api('getAllRequests');
-    ALL = resp.requests || [];
+    ALL = primeRecords(resp.requests || []);
     updateStats();
     applyFilters();
+    try{ sessionStorage.setItem(CACHE_KEY, JSON.stringify(ALL)); }catch(e){}
     if(ALL.length===0){
       renderEmpty('لا توجد طلبات بعد — الشيت فارغ');
-    } else {
+    } else if(!hydratedFromCache){
       toast('تم تحميل '+ALL.length+' طلب','ok');
     }
   }catch(e){
     const msg = e.name==='AbortError'
       ? 'انتهت مهلة الاتصال — الخادم بطيء، حاول مرة أخرى'
       : 'خطأ: '+e.message;
+    // لو عندنا بيانات من الكاش خليها ظاهرة وبس نبّه المستخدم بدل ما نمسح الجدول
+    if (!hydratedFromCache) renderEmpty(msg);
     toast(msg,'er',8000);
-    renderEmpty(msg);
   }finally{ hideLov(); }
 }
 
@@ -1032,6 +1114,12 @@ function filterStat(s){
   applyFilters();
 }
 
+let _searchTimer=null;
+function onSearchInput(){
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(applyFilters, 200); // تأخير بسيط يمنع إعادة الفلترة/الفرز مع كل حرف
+}
+
 function applyFilters(){
   const q  = document.getElementById('srchQ').value.trim().toLowerCase();
   const tp = document.getElementById('fltType').value;
@@ -1045,11 +1133,7 @@ function applyFilters(){
     return mq && (!tp||r.requestType===tp) && (!st||r.status===st);
   });
 
-  FILTERED.sort((a,b)=>{
-    const da=parseArabicDate(a.submittedAt);
-    const db=parseArabicDate(b.submittedAt);
-    return SORT_ASC ? da-db : db-da;
-  });
+  FILTERED.sort((a,b)=> SORT_ASC ? a._ts-b._ts : b._ts-a._ts);
 
   PAGE=1;
   renderTable();
@@ -1079,7 +1163,7 @@ function renderRowThumb(url){
   // فمينفعش نعتمد على فحص الامتداد لتحديد هل الملف صورة أو لأ.
   // بنحاول نعرضها كصورة دايمًا، ولو فشل التحميل (PDF فعلاً أو رابط باظ) بنرجع لأيقونة/رابط.
   const src = driveView(url);
-  return `<img src="${src}" class="row-thumb" alt="إيصال"
+  return `<img src="${src}" class="row-thumb" alt="إيصال" loading="lazy" decoding="async"
             onclick="openLightbox('${src}')"
             onerror="this.outerHTML='<a href=\\'${url}\\' target=\\'_blank\\' class=\\'row-thumb-pdf\\' title=\\'تعذّر تحميل المعاينة — فتح الملف\\'>🔗</a>'">`;
 }
@@ -1104,32 +1188,35 @@ function renderTable(){
   const start = (PAGE-1)*PG;
   const rows  = FILTERED.slice(start, start+PG);
 
-  tbody.innerHTML = rows.map((r,i)=>{
+  const frag = [];
+  for(let i=0;i<rows.length;i++){
+    const r = rows[i];
     const sc  = sClass(r.status);
     const hasTrans = r.receiptUrlTranslated && r.receiptUrlTranslated.trim();
-    const pidx     = ALL.indexOf(r);
-    return `<tr>
+    const pidx = r._idx; // بدل ALL.indexOf(r) المكلفة (كانت تحوّل رسم الجدول لـ O(n²))
+    frag.push(`<tr>
       <td style="color:var(--muted);font-size:.76rem;">${start+i+1}</td>
-      <td style="font-family:monospace;font-size:.75rem;color:var(--pr);">${r.requestNumber||'—'}</td>
-      <td><strong>${r.nameAr||'—'}</strong></td>
-      <td style="font-family:monospace;font-size:.76rem;direction:ltr;">${r.nationalId||'—'}</td>
-      <td style="font-size:.8rem;">${r.requestType||'—'}</td>
-      <td style="font-size:.79rem;">${r.receiptNo||'—'}</td>
+      <td style="font-family:monospace;font-size:.75rem;color:var(--pr);">${esc(r.requestNumber)||'—'}</td>
+      <td><strong>${esc(r.nameAr)||'—'}</strong></td>
+      <td style="font-family:monospace;font-size:.76rem;direction:ltr;">${esc(r.nationalId)||'—'}</td>
+      <td style="font-size:.8rem;">${esc(r.requestType)||'—'}</td>
+      <td style="font-size:.79rem;">${esc(r.receiptNo)||'—'}</td>
       <td>${renderRowThumb(r.receiptUrl)}</td>
-      <td style="text-align:center;">${r.count||'—'}</td>
-      <td style="font-size:.76rem;white-space:nowrap;">${r.submittedAt||'—'}</td>
-      <td style="font-size:.72rem;color:var(--muted);">${r.printedAt   ? '🖨️ '+r.printedAt   : '—'}</td>
-      <td style="font-size:.72rem;color:var(--muted);">${r.deliveredAt ? '📦 '+r.deliveredAt : '—'}</td>
-      <td><span class="sb ${sc}">${r.status||'قيد الانتظار'}</span></td>
+      <td style="text-align:center;">${esc(r.count)||'—'}</td>
+      <td style="font-size:.76rem;white-space:nowrap;">${esc(r.submittedAt)||'—'}</td>
+      <td style="font-size:.72rem;color:var(--muted);">${r.printedAt   ? '🖨️ '+esc(r.printedAt)   : '—'}</td>
+      <td style="font-size:.72rem;color:var(--muted);">${r.deliveredAt ? '📦 '+esc(r.deliveredAt) : '—'}</td>
+      <td><span class="sb ${sc}">${esc(r.status)||'قيد الانتظار'}</span></td>
       <td>
         <div class="acts">
           <button class="ico-btn ib-v" title="عرض وتعديل"  onclick="openDetail(${pidx})">👁️</button>
           <button class="ico-btn ib-p" title="طباعة"        onclick="quickPrint(${pidx})">🖨️</button>
-          ${hasTrans?`<button class="ico-btn ib-dl" title="تنزيل الترجمة" onclick="window.open('${r.receiptUrlTranslated}','_blank')">⬇️</button>`:''}
+          ${hasTrans?`<button class="ico-btn ib-dl" title="تنزيل الترجمة" onclick="window.open('${esc(r.receiptUrlTranslated)}','_blank')">⬇️</button>`:''}
         </div>
       </td>
-    </tr>`;
-  }).join('');
+    </tr>`);
+  }
+  tbody.innerHTML = frag.join('');
 
   renderPag(total);
 }
@@ -1189,16 +1276,16 @@ function openDetail(idx){
   }).join('');
 
   document.getElementById('detailGrid').innerHTML = `
-    <div class="di"><div class="di-lbl">اسم الطالب</div><div class="di-val">${r.nameAr||'—'}</div></div>
+    <div class="di"><div class="di-lbl">اسم الطالب</div><div class="di-val">${esc(r.nameAr)||'—'}</div></div>
     <div class="di"><div class="di-lbl">الاسم بالإنجليزية</div><div class="di-val" id="diNameEn" style="direction:ltr;text-align:right;">جارِ التحميل...</div></div>
-    <div class="di"><div class="di-lbl">الرقم القومي</div><div class="di-val" style="direction:ltr;font-family:monospace;">${r.nationalId||'—'}</div></div>
+    <div class="di"><div class="di-lbl">الرقم القومي</div><div class="di-val" style="direction:ltr;font-family:monospace;">${esc(r.nationalId)||'—'}</div></div>
     <div class="di"><div class="di-lbl">تاريخ الميلاد</div><div class="di-val">${formatDobFromNationalId(r.nationalId)||'—'}</div></div>
-    <div class="di"><div class="di-lbl">نوع الشهادة</div><div class="di-val">${r.requestType||'—'}</div></div>
-    <div class="di"><div class="di-lbl">رقم الإيصال</div><div class="di-val">${r.receiptNo||'—'}</div></div>
-    <div class="di"><div class="di-lbl">عدد النسخ</div><div class="di-val">${r.count||'—'}</div></div>
-    <div class="di"><div class="di-lbl">تاريخ التقديم</div><div class="di-val">${r.submittedAt||'—'}</div></div>
-    <div class="di"><div class="di-lbl">🖨️ تاريخ الطباعة</div><div class="di-val">${r.printedAt||'لم يُطبع بعد'}</div></div>
-    <div class="di"><div class="di-lbl">📦 تاريخ التسليم</div><div class="di-val">${r.deliveredAt||'لم يُسلَّم بعد'}</div></div>
+    <div class="di"><div class="di-lbl">نوع الشهادة</div><div class="di-val">${esc(r.requestType)||'—'}</div></div>
+    <div class="di"><div class="di-lbl">رقم الإيصال</div><div class="di-val">${esc(r.receiptNo)||'—'}</div></div>
+    <div class="di"><div class="di-lbl">عدد النسخ</div><div class="di-val">${esc(r.count)||'—'}</div></div>
+    <div class="di"><div class="di-lbl">تاريخ التقديم</div><div class="di-val">${esc(r.submittedAt)||'—'}</div></div>
+    <div class="di"><div class="di-lbl">🖨️ تاريخ الطباعة</div><div class="di-val">${esc(r.printedAt)||'لم يُطبع بعد'}</div></div>
+    <div class="di"><div class="di-lbl">📦 تاريخ التسليم</div><div class="di-val">${esc(r.deliveredAt)||'لم يُسلَّم بعد'}</div></div>
   `;
 
   const rBox=document.getElementById('rcptBox');
@@ -1231,9 +1318,47 @@ function openDetail(idx){
 
   document.getElementById('editStatus').value = r.status||'قيد الانتظار';
   document.getElementById('editNotes').value  = r.notes ||'';
+
+  // بيانات الشهادة القابلة للتعديل (محفوظة محليًا في المتصفح لكل طلب)
+  let savedOv=null;
+  try{ savedOv = JSON.parse(localStorage.getItem('certOv_'+r.requestNumber) || 'null'); }catch(e){}
+  document.getElementById('certIdType').value      = (savedOv && savedOv.idType) || 'national';
+  document.getElementById('certIdValue').value     = (savedOv && savedOv.idValue) || '';
+  document.getElementById('certIdValue').placeholder = 'تلقائي: ' + (r.nationalId||'—');
+  document.getElementById('certGender').value      = (savedOv && savedOv.gender) || '';
+  document.getElementById('certNationality').value = (savedOv && savedOv.nationality) || '';
+  document.getElementById('certAddress').value     = (savedOv && savedOv.address) || '';
+  onCertIdTypeChange();
+
   document.getElementById('detailOv').classList.add('open');
 
   loadNameEn(r.nationalId);
+}
+
+// ══════════════════════════════════════════
+//  بيانات الشهادة القابلة للتعديل (رقم قومي/جواز، جنسية، محل إقامة)
+// ══════════════════════════════════════════
+function onCertIdTypeChange(){
+  const t = document.getElementById('certIdType').value;
+  document.getElementById('certIdValueLbl').textContent = (t==='passport') ? 'رقم الجواز' : 'الرقم القومي';
+  if(t==='passport'){
+    document.getElementById('certIdValue').placeholder = 'أدخل رقم الجواز';
+  } else if(CUR){
+    document.getElementById('certIdValue').placeholder = 'تلقائي: ' + (CUR.nationalId||'—');
+  }
+  saveCertOv();
+}
+
+function saveCertOv(){
+  if(!CUR) return;
+  const ov = {
+    idType:      document.getElementById('certIdType').value,
+    idValue:     document.getElementById('certIdValue').value.trim(),
+    gender:      document.getElementById('certGender').value,
+    nationality: document.getElementById('certNationality').value.trim(),
+    address:     document.getElementById('certAddress').value.trim(),
+  };
+  try{ localStorage.setItem('certOv_'+CUR.requestNumber, JSON.stringify(ov)); }catch(e){}
 }
 
 // ══════════════════════════════════════════
@@ -1276,9 +1401,10 @@ async function saveChanges(){
     const newStatus=document.getElementById('editStatus').value;
     const newNotes =document.getElementById('editNotes').value;
     await api('updateRequest',{requestNumber:CUR.requestNumber,status:newStatus,notes:newNotes});
-    const i=ALL.indexOf(CUR);
-    if(i>-1){ ALL[i].status=newStatus; ALL[i].notes=newNotes; CUR=ALL[i]; }
+    const i=CUR._idx;
+    if(i>-1 && ALL[i]){ ALL[i].status=newStatus; ALL[i].notes=newNotes; CUR=ALL[i]; }
     updateStats(); applyFilters();
+    try{ sessionStorage.setItem(CACHE_KEY, JSON.stringify(ALL)); }catch(e){}
     toast('تم حفظ التغييرات ✅','ok');
     closeOv('detailOv');
   }catch(e){ toast('خطأ: '+e.message,'er'); }
@@ -1296,9 +1422,10 @@ async function markDelivered(){
   btn.innerHTML='<div class="spin"></div> جاري...';
   try{
     const resp=await api('recordDelivery',{requestNumber:CUR.requestNumber});
-    const i=ALL.indexOf(CUR);
-    if(i>-1){ ALL[i].status='تم التسليم'; ALL[i].deliveredAt=resp.deliveredAt||'—'; CUR=ALL[i]; }
+    const i=CUR._idx;
+    if(i>-1 && ALL[i]){ ALL[i].status='تم التسليم'; ALL[i].deliveredAt=resp.deliveredAt||'—'; CUR=ALL[i]; }
     updateStats(); applyFilters();
+    try{ sessionStorage.setItem(CACHE_KEY, JSON.stringify(ALL)); }catch(e){}
     toast('تم تسجيل التسليم بتاريخ '+CUR.deliveredAt+' 📦','ok');
     closeOv('detailOv');
   }catch(e){ toast('خطأ: '+e.message,'er'); }
@@ -1324,7 +1451,22 @@ async function doPrint(){
     if(resp.found) G=resp.data;
   }catch(e){}
 
-  buildPrintArea(CUR, G);
+  // تطبيق بيانات الشهادة المعدَّلة يدويًا (نوع الهوية/رقمها، الجنسية، محل الإقامة)
+  // مفيدة خصوصًا للطلبة الوافدين اللي مالهمش رقم قومي مصري
+  const certIdType   = document.getElementById('certIdType')?.value || 'national';
+  const certIdValue  = document.getElementById('certIdValue')?.value.trim();
+  const certGender   = document.getElementById('certGender')?.value;
+  const certNatOv    = document.getElementById('certNationality')?.value.trim();
+  const certAddrOv   = document.getElementById('certAddress')?.value.trim();
+
+  const G2 = Object.assign({}, G);
+  G2.id_label = (certIdType === 'passport') ? 'رقم الجواز' : 'الرقم القومي';
+  if(certIdValue) G2.national_id          = certIdValue;
+  if(certGender)  G2.gender_override      = certGender;
+  if(certNatOv)   G2.nationality_override = certNatOv;
+  if(certAddrOv)  G2.address              = certAddrOv;
+
+  buildPrintArea(CUR, G2);
 
   document.getElementById('detailOv').classList.remove('open');
 
@@ -1333,9 +1475,10 @@ async function doPrint(){
     window.print();
     try{
       const resp=await api('recordPrint',{requestNumber:CUR.requestNumber});
-      const i=ALL.indexOf(CUR);
-      if(i>-1){ ALL[i].status='جاهز'; ALL[i].printedAt=resp.printedAt||'—'; CUR=ALL[i]; }
+      const i=CUR._idx;
+      if(i>-1 && ALL[i]){ ALL[i].status='جاهز'; ALL[i].printedAt=resp.printedAt||'—'; CUR=ALL[i]; }
       updateStats(); applyFilters();
+      try{ sessionStorage.setItem(CACHE_KEY, JSON.stringify(ALL)); }catch(e){}
       toast('تم تسجيل الطباعة وتحديث الحالة لـ "جاهز" ✅','ok');
     }catch(e){ toast('تحذير: لم يُسجَّل تاريخ الطباعة تلقائياً','in'); }
     if(btn){ btn.disabled=false; btn.innerHTML='🖨️ طباعة الشهادة'; }
@@ -1424,23 +1567,25 @@ function formatAttempt(raw) {
 function buildPrintArea(r, G){
   const name   = G?.name_ar     || '..........................................';
   const natId  = G?.national_id || r.nationalId || '......................';
+  const idLabel= G?.id_label    || 'الرقم القومي';
   const dob    = formatDobFromNationalId(natId) || formatDob(G?.dob);
   const addr   = G?.address     || '......................';
   const dept   = G?.department  || '......................';
   const grade  = G?.grade       || '......................';
   const sys    = G?.study_system|| '......................';
-  const pct    = G?.percentage  || '......................';
+  const pctRaw = G?.percentage  || '......................';
+  const pct    = String(pctRaw).trim().replace(/%\s*$/, '');
   const tot    = G?.total       || '......................';
   const att    = formatAttempt(G?.attempt);
   const dkol   = G?.council_date_college    || '......................';
   const duniv  = G?.council_date_university || '......................';
 
-  const gender = (G?.gender || G?.sex || '').trim();
-  const isFemale = gender === 'أنثى' || gender === 'انثى' || gender === 'female';
+  const genderRaw = (G?.gender_override || G?.gender || G?.sex || '').trim();
+  const isFemale = genderRaw === 'female' || genderRaw === 'أنثى' || genderRaw === 'انثى';
 
   const salutation = isFemale ? 'السيدة' : 'السيد';
   const got        = isFemale ? 'حصلت'   : 'حصل';
-  const nationality= isFemale ? 'مصرية'  : 'مصري';
+  const nationality= G?.nationality_override || (isFemale ? 'مصرية'  : 'مصري');
 
   document.getElementById('printArea').innerHTML=`
   <div class="cert-wrap">
@@ -1453,7 +1598,7 @@ function buildPrintArea(r, G){
     <div class="c-line">
       <span class="c-lbl">بأن ${salutation} / </span>
       <span class="c-val">${name}</span>
-      <span class="c-lbl" style="margin-right:4mm;">الرقم القومي</span>
+      <span class="c-lbl" style="margin-right:4mm;">${idLabel}</span>
       <span class="c-val-id">${natId}</span>
     </div>
 
